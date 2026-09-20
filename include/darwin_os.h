@@ -5,42 +5,62 @@
 
 #define DARWIN_OS_NAME "Darwin"
 #define DARWIN_OS_RELEASE "27.0.0"
-#define DARWIN_KERNEL_RELEASE "27.0.0"
 #define DARWIN_BUILD_VERSION "27A"
-#define DARWIN_HOSTNAME "darwin-prototype"
-#define DARWIN_USERNAME "root"
-#define DARWIN_DEFAULT_CWD "/"
-#define DARWIN_STATE_ENV "DARWIN_STATE_FILE"
-#define DARWIN_STATE_PATH "/tmp/darwin_runtime_state"
+#define DARWIN_DEFAULT_HOSTNAME "darwin-prototype"
+#define DARWIN_DEFAULT_USER "root"
 #define DARWIN_MAX_SERVICES 16
-#define DARWIN_MAX_NAME 64
+#define DARWIN_STATE_ENV "DARWIN_STATE_FILE"
+#define DARWIN_STATE_DEFAULT "/tmp/darwin_prototype.state"
+
+typedef enum {
+    DARWIN_SERVICE_STOPPED,
+    DARWIN_SERVICE_LOADING,
+    DARWIN_SERVICE_RUNNING,
+    DARWIN_SERVICE_STOPPING,
+    DARWIN_SERVICE_WAITING
+} darwin_service_state_t;
 
 typedef struct {
-    char name[64];
-    char description[128];
-    bool running;
+    char label[64];
+    char program[128];
+    char description[160];
+    darwin_service_state_t state;
+    int pid;
+    unsigned long runs;
+    bool keep_alive;
 } darwin_service_t;
 
 typedef struct {
-    char hostname[64];
-    char username[32];
-    char cwd[256];
+    char hostname[128];
+    char username[64];
+    char cwd[512];
     char kernel_state[32];
     bool booted;
     bool shutdown_requested;
+    unsigned long event_sequence;
     darwin_service_t services[DARWIN_MAX_SERVICES];
     int service_count;
 } darwin_state_t;
 
-void darwin_set_default_state(darwin_state_t *state);
+void darwin_state_init(darwin_state_t *state);
 const char *darwin_state_path(void);
-int darwin_load_state(darwin_state_t *state);
-int darwin_save_state(const darwin_state_t *state);
-int darwin_boot_system(void);
-int darwin_shutdown_system(void);
-void darwin_register_default_services(darwin_state_t *state);
-int darwin_update_service_status(const char *name, bool running);
-const char *darwin_get_service_status_string(bool running);
-void darwin_print_banner(void);
+int darwin_state_load(darwin_state_t *state);
+int darwin_state_save(const darwin_state_t *state);
+
+void darwin_boot(darwin_state_t *state);
+void darwin_shutdown(darwin_state_t *state);
+void darwin_print_boot_log(const darwin_state_t *state);
+
+const char *darwin_service_state_name(darwin_service_state_t state);
+darwin_service_t *darwin_find_service(darwin_state_t *state, const char *label);
+const darwin_service_t *darwin_find_service_const(const darwin_state_t *state, const char *label);
+int darwin_service_start(darwin_state_t *state, const char *label);
+int darwin_service_stop(darwin_state_t *state, const char *label);
+void darwin_print_services(const darwin_state_t *state);
+void darwin_print_service(const darwin_service_t *service);
+
+void darwin_print_sysctl_all(void);
+int darwin_print_sysctl(const char *key);
+void darwin_print_help(void);
 
 #endif

@@ -1,0 +1,4 @@
+#include "darwin_os.h"
+#include <stdio.h>
+#include <string.h>
+int main(int argc, char **argv) { darwin_state_t s; darwin_state_load(&s); if (argc < 2 || !strcmp(argv[1], "list")) { darwin_print_services(&s); return 0; } if (!strcmp(argv[1], "print") && argc > 2) { const darwin_service_t *x=darwin_find_service_const(&s,argv[2]); if (!x) { fprintf(stderr,"launchctl: service not found\n"); return 1; } darwin_print_service(x); return 0; } if ((!strcmp(argv[1],"start") || !strcmp(argv[1],"stop")) && argc > 2) { int rc=!strcmp(argv[1],"start") ? darwin_service_start(&s,argv[2]) : darwin_service_stop(&s,argv[2]); if (rc) { fprintf(stderr,"launchctl: service not found\n"); return 1; } darwin_state_save(&s); return 0; } fprintf(stderr,"usage: launchctl list|print|start|stop <label>\n"); return 1; }
