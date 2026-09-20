@@ -1,17 +1,67 @@
 # Darwin Prototype
 
-Darwin 27.0.0-inspired OS observation and interactive shell prototype. It is not the XNU kernel; it is a user-space simulation of selected Mach, BSD, IOKit, and launchd concepts.
+Darwin 27.0.0-inspired OS observation and interactive shell prototype. It is not the XNU kernel; it is a user-space simulation of selected XNU, Mach, BSD, IOKit, launchd, and boot-flow concepts.
 
-## Recent command fidelity improvements
+## Architecture
 
-- `launchctl list` is backed by the same service state used by `launchctl print`, `start`, and `stop`.
-- Repeated `start`/`stop` operations are idempotent and do not create false lifecycle events.
-- Service lifecycle changes emit `com.apple.launchd` log records.
-- `sysctl -a` exposes a larger macOS-style inventory of `kern.*`, `hw.*`, and `vfs.*` keys.
-- `log show` prints ordered sequence numbers, severity, subsystem, category, and message.
-- `log show --predicate com.apple.launchd` filters the event stream by subsystem.
+- **Kernel-like layer**: ordered boot, shutdown, and kernel event flow
+- **Mach-like layer**: virtual ports and message events
+- **BSD-like layer**: virtual process table and lifecycle events
+- **Filesystem layer**: virtual root filesystem inventory plus host adapter for `ls`, `pwd`, and `hostname`
+- **IOKit-like layer**: virtual device registry exposed by `ioreg` and `iokit tree`
+- **launchd-like service layer**: service state machine, plist metadata, PID/state reporting
+- **Adapter layer**: isolated POSIX/Win32 APIs with a generic C11 fallback
 
-## Build
+The implementation is C-first. The host-independent observer core does not require Python.
+
+## Service state machine
+
+The service model uses explicit states and ordered transitions:
+
+```text
+stopped -> loading -> running
+running -> stopping -> stopped
+running -> waiting -> loading
+loading -> waiting
+waiting -> stopped
+```
+
+Use:
+
+```text
+launchctl list
+launchctl print com.apple.launchd
+launchctl start com.example.darwin-observer
+launchctl stop com.example.darwin-observer
+launchctl kickstart com.example.darwin-observer
+```
+
+State changes and service logs use the same in-memory model. Repeating `start` or `stop` when already in that state is idempotent.
+
+## sysctl inventory and ordered logs
+
+The shell provides macOS-style inventory groups:
+
+```text
+sysctl -a
+sysctl kern.osrelease
+sysctl hw.ncpu
+```
+
+Inventory includes `kern.*`, `kern.ipc.*`, `kern.vm.*`, `hw.*`, and `vfs.*` keys. Unknown OIDs are reported instead of silently returning a value.
+
+The ordered event store records sequence, timestamp, level, subsystem, category, and message. Use:
+
+```text
+dmesg
+log show --last boot
+log show --predicate com.apple.launchd
+log show --level NOTICE
+```
+
+Boot order is kernel handoff, Mach IPC, BSD VM/VFS, platform matching, IOKit registry, root filesystem mount, launchd bootstrap, service loading, and multi-user readiness. Shutdown drains services in reverse order, unmounts the virtual filesystem, drains Mach ports, and requests the kernel halt.
+
+## Build on Linux devcontainers
 
 ```sh
 cmake -S . -B build
@@ -19,43 +69,75 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Generic minimal mode:
+Generic minimal mode, with no host filesystem or hostname APIs:
 
 ```sh
 cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
 cmake --build build-generic
+ctest --test-dir build-generic --output-on-failure
 ```
 
-## Shell examples
+## Run
+
+```sh
+./build/darwinctl uname
+./build/darwinctl sw_vers
+./build/darwinctl sysctl
+./build/darwin-shell
+```
+
+Example shell session:
 
 ```text
-boot
-sysctl -a
-kextstat
-launchctl list
-launchctl print com.apple.launchd
-launchctl start com.example.darwin-observer
-launchctl stop com.example.darwin-observer
-log show --predicate com.apple.launchd
-log show --last boot
-dmesg
-ioreg -l
-shutdown
+$ ./build/darwin-shell
+Darwin Shell 27.0.0 (simulated user space)
+darwin% boot
+boot complete
+darwin% sysctl kern.osrelease
+27.0.0
+darwin% launchctl list
+PID  Status   Label
+0    running  com.apple.kernel
+1    running  com.apple.launchd
+...
+darwin% log show --predicate com.apple.launchd
+00:00:06 [0006] INFO   com.apple.launchd       bootstrap     bootstrap namespace created
+...
+darwin% shutdown
+shutdown requested
 ```
 
-## Event model
+## Tests
 
-Boot events are recorded in realistic order: kernel handoff, Mach initialization, BSD VM/VFS setup, platform matching, IOKit registry publication, root filesystem mount, launchd bootstrap, service loading, and multi-user readiness.
+```sh
+ctest --test-dir build --output-on-failure
+sh tests/shell_transcript.sh
+```
 
-Shutdown follows the reverse lifecycle: halt request, launchd service drain, virtual filesystem unmount, Mach port drain, and kernel halt request. Both `dmesg` and `log show` read the same ordered event store, so service state and displayed logs remain consistent.
+## Publish the project
 
-## Architecture
+The following commands build, test, commit, and publish the prototype to the configured Git remote:
 
-- `src/darwin_observer.c`: host-independent Darwin-like kernel/process/service/IPC/device model and ordered event store
-- `src/darwin_shell.c`: interactive Darwin/macOS-style command interpreter
-- `src/darwin_adapter.c`: isolated hostname, working-directory, and directory-listing adapters
-- Full mode: POSIX/Win32 APIs through the adapter layer
-- Minimal mode: standard C plus stdout/stderr, with no host filesystem or hostname APIs
-- `config/com.example.darwin-observer.plist`: launchd-style service definition
+```sh
+git clone https://github.com/jintailangjianyou4-cmyk/darwin-prototype.git
+cd darwin-prototype
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+git status
+git add CMakeLists.txt README.md docs/MODELS.md tests/shell_transcript.sh
+git commit -m "Model launchd states sysctl inventory and ordered logs"
+git push origin main
+```
 
-This provides portable observation of a simulation on Linux, macOS, BSD, Android, Windows, Haiku, illumos/Solaris, QNX, Cygwin/MSYS2/WSL, WASI, embedded C11 environments, and other systems with a suitable C compiler. It does not provide native kernel compatibility.
+For a new branch and pull request:
+
+```sh
+git switch -c feature/darwin-observer-models
+git add .
+git commit -m "Improve Darwin observer models"
+git push -u origin feature/darwin-observer-models
+# Then open a pull request for feature/darwin-observer-models -> main.
+```
+
+This project observes a simulation; it does not replace or control the host kernel.
