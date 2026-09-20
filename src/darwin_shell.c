@@ -12,9 +12,8 @@ static void print_help(void) {
     puts("  ps [-axo] | top [-o cpu|mem]");
     puts("  sysctl -a | sysctl <oid> | kextstat");
     puts("  launchctl list | print <label> | start <label> | stop <label>");
-    puts("  service status <label>");
     puts("  mach ports | mach send <port> <message>");
-    puts("  iokit tree | ioreg");
+    puts("  ioreg [-l] | iokit tree");
     puts("  dmesg | log show [--last boot]");
     puts("  spawn <name> | kill <pid>");
     puts("  hostname | pwd | whoami | ls [path] | help | exit");
@@ -31,6 +30,29 @@ static char *next_token(char **cursor) {
     return start;
 }
 
+static void print_sysctl_all(void) {
+    puts("kern.ostype: Darwin");
+    puts("kern.osrelease: 27.0.0");
+    puts("kern.version: Darwin Kernel Version 27.0.0: root:xnu-prototype");
+    puts("kern.hostname: darwin-prototype");
+    puts("kern.boottime: { sec = 0, usec = 0 }");
+    puts("kern.maxproc: 32");
+    puts("kern.ipc.mach_ports: 64");
+    puts("kern.vm.pagesize: 4096");
+    puts("hw.machine: portable");
+    puts("hw.ncpu: 4");
+    puts("hw.memsize: 4294967296");
+    puts("vfs.rootfs: virtual-apfs");
+}
+
+static void print_kextstat(void) {
+    puts("Index Refs Address        Size       Name (Version)");
+    puts("    0    1 0x00000000     0x1000     com.apple.kernel (27.0.0)");
+    puts("    1    1 0x00001000     0x0800     com.apple.iokit (1.0)");
+    puts("    2    2 0x00001800     0x0600     com.apple.driver.IOPlatformExpert (1.0)");
+    puts("    3    1 0x00001e00     0x0400     com.apple.filesystems.apfs (1.0)");
+}
+
 int main(void) {
     char line[512];
     darwin_observer_init(&observer);
@@ -38,10 +60,8 @@ int main(void) {
     print_help();
 
     for (;;) {
-        fputs("darwin% ", stdout);
-        fflush(stdout);
+        fputs("darwin% ", stdout); fflush(stdout);
         if (!fgets(line, sizeof(line), stdin)) break;
-
         char *cursor = line;
         char *command = next_token(&cursor);
         char *arg1 = next_token(&cursor);
@@ -55,15 +75,8 @@ int main(void) {
         if (!strcmp(command, "shutdown")) { darwin_observer_shutdown(&observer); puts("shutdown requested"); continue; }
         if (!strcmp(command, "ps")) { darwin_print_processes(&observer, 0, "cpu"); continue; }
         if (!strcmp(command, "top")) { darwin_print_processes(&observer, 1, (arg1 && (!strcmp(arg1, "-o") || !strcmp(arg1, "-sort")) && arg2) ? arg2 : "cpu"); continue; }
-
-        if (!strcmp(command, "sysctl")) {
-            if (!arg1 || !strcmp(arg1, "-a")) puts("kern.ostype: Darwin\nkern.osrelease: 27.0.0\nkern.version: Darwin Kernel Version 27.0.0\nkern.ipc.mach_ports: 64\nkern.proc.max: 32\nhw.machine: portable");
-            else if (!strcmp(arg1, "kern.ostype")) puts("Darwin");
-            else if (!strcmp(arg1, "kern.osrelease")) puts("27.0.0");
-            else puts("sysctl: unknown oid");
-            continue;
-        }
-        if (!strcmp(command, "kextstat")) { puts("Index Refs Address        Size       Name\n   0    1 0x00000000     0x1000     com.apple.kernel\n   1    1 0x00000000     0x0800     com.apple.iokit"); continue; }
+        if (!strcmp(command, "sysctl")) { if (!arg1 || !strcmp(arg1, "-a")) print_sysctl_all(); else if (!strcmp(arg1, "kern.ostype")) puts("Darwin"); else if (!strcmp(arg1, "kern.osrelease")) puts("27.0.0"); else puts("sysctl: unknown oid"); continue; }
+        if (!strcmp(command, "kextstat")) { print_kextstat(); continue; }
 
         if (!strcmp(command, "launchctl")) {
             if (!arg1 || !strcmp(arg1, "list")) darwin_print_services(&observer);
@@ -72,12 +85,7 @@ int main(void) {
             else puts("usage: launchctl list|print|start|stop <label>");
             continue;
         }
-        if (!strcmp(command, "service") && arg1 && !strcmp(arg1, "status") && arg2) { if (darwin_service_print(&observer, arg2)) puts("service: not found"); continue; }
-        if (!strcmp(command, "mach")) {
-            if (arg1 && !strcmp(arg1, "ports")) darwin_print_ports(&observer);
-            else if (arg1 && !strcmp(arg1, "send") && arg2) { char *message = next_token(&cursor); darwin_send_message(&observer, atoi(arg2), message ? message : "shell message"); puts("message sent"); }
-            continue;
-        }
+        if (!strcmp(command, "mach")) { if (arg1 && !strcmp(arg1, "ports")) darwin_print_ports(&observer); else if (arg1 && !strcmp(arg1, "send") && arg2) { char *message = next_token(&cursor); darwin_send_message(&observer, atoi(arg2), message ? message : "shell message"); puts("message sent"); } continue; }
         if (!strcmp(command, "iokit") || !strcmp(command, "ioreg")) { darwin_print_devices(&observer); continue; }
         if (!strcmp(command, "dmesg") || (!strcmp(command, "log") && arg1 && !strcmp(arg1, "show"))) { darwin_print_logs(&observer); continue; }
         if (!strcmp(command, "spawn") && arg1) { printf("spawned pid %d\n", darwin_spawn(&observer, arg1)); continue; }

@@ -10,66 +10,68 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-For the generic minimal mode, which uses only standard C and stdout/stderr:
+Generic minimal mode:
 
 ```sh
 cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
 cmake --build build-generic
 ```
 
-In full mode, only `src/darwin_adapter.c` uses POSIX or Win32 host APIs. The simulated Darwin core remains host-independent.
+Only `src/darwin_adapter.c` uses POSIX or Win32 host APIs in full mode. The simulated Darwin core remains host-independent.
 
-## Interactive shell
+## Darwin-like shell commands
 
 ```sh
 ./build/darwin-shell
 ```
 
-The shell accepts Darwin/macOS-inspired commands:
+Supported commands include:
 
 ```text
 boot | reboot | shutdown
 ps [-axo]
 top [-o cpu|mem]
 sysctl -a
+sysctl kern.osrelease
 kextstat
 launchctl list
 launchctl print com.apple.launchd
 launchctl start com.example.darwin-observer
 launchctl stop com.example.darwin-observer
-service status com.apple.launchd
-spawn worker
-kill 104
-mach ports
-mach send 100 hello
+ioreg -l
 iokit tree
-ioreg
 dmesg
 log show --last boot
-ls / hostname pwd whoami
+mach ports
+mach send 100 hello
+spawn worker
+kill 104
 ```
 
-`ps` shows the complete virtual process table in a compact BSD-like format. `top` shows a sorted, abbreviated live-style view with CPU, memory, state, and command columns. `launchctl list` reports PID, state, and service label; `launchctl print` reports program, run count, and keep-alive policy.
+`sysctl -a` prints a structured kernel/hardware/VFS inventory. `kextstat` shows simulated kernel extensions. `launchctl print` reports service state, PID, program, run count, and keep-alive policy. `ioreg` and `iokit tree` expose the virtual I/O registry.
 
-## Event-driven kernel-style logs
+## Realistic boot and shutdown event flow
 
-The common observer core owns the virtual process table, launchd service table, Mach ports, IOKit registry, and kernel log. These operations append log records:
+The observer records an ordered kernel-style event chain:
 
-- `boot` and `reboot`: kernel, Mach, BSD, IOKit, and launchd bootstrap events
-- `spawn` and `kill`: BSD process lifecycle events
-- `mach send`: Mach message events
-- `launchctl start/stop`: launchd service lifecycle events
-- `shutdown`: service draining and kernel halt events
+1. Kernel handoff and Mach IPC initialization
+2. BSD VM, credentials, and VFS initialization
+3. Platform expert matching the root device
+4. IOKit registry publication
+5. Virtual root filesystem mount
+6. launchd bootstrap namespace creation
+7. launchd service set loading
+8. Multi-user userspace readiness
 
-Use `dmesg` or `log show` to inspect the resulting event chain.
+Shutdown records the reverse lifecycle: halt request, user-service drain in reverse order, virtual filesystem unmount, Mach port drain, and kernel halt request. Use `dmesg` or `log show --last boot` after each operation to inspect the chain.
 
 ## Architecture
 
 - `src/darwin_observer.c`: host-independent Darwin-like kernel/process/service/IPC/device model
-- `src/darwin_shell.c`: interactive command interpreter
+- `src/darwin_shell.c`: interactive Darwin/macOS-style command interpreter
 - `src/darwin_adapter.c`: isolated hostname, working-directory, and directory-listing adapters
-- full mode: POSIX/Win32 APIs through the adapter layer
-- minimal mode: standard C plus stdout/stderr, with no host filesystem or hostname APIs
-- `config/com.example.darwin-observer.plist`: launchd-style service definition for observation and documentation
+- Full mode: POSIX/Win32 APIs through the adapter layer
+- Minimal mode: standard C plus stdout/stderr, with no host filesystem or hostname APIs
+- `config/com.example.darwin-observer.plist`: launchd-style service definition
 
-The design is intended to build on Linux, macOS, BSD, Android, Windows, Haiku, illumos/Solaris, QNX, Cygwin/MSYS2/WSL, WASI, embedded C11 environments, and other systems with a suitable C compiler. This means portable observation of the simulation, not native kernel compatibility.
+This provides portable observation of a simulation on Linux, macOS, BSD, Android, Windows, Haiku, illumos/Solaris, QNX, Cygwin/MSYS2/WSL, WASI, embedded C11 environments, and other systems with a suitable C compiler. It does not provide native kernel compatibility.
