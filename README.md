@@ -10,46 +10,54 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-ホストAPIを使わない汎用モード:
+汎用minimal mode（標準C + stdout/stderrのみ）:
 
 ```sh
 cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
 cmake --build build-generic
 ```
 
-## Interactive shell
+通常のfull modeでは、`src/darwin_adapter.c`だけがPOSIX/Win32 APIを使用し、共通コアはホスト非依存です。
+
+## darwin-shell
 
 ```sh
 ./build/darwin-shell
 ```
 
-主なコマンド:
+Darwin系の入力に寄せたコマンド:
 
 ```text
-boot / shutdown
-ps / top
+boot | reboot | shutdown
+ps [-axo]
+top [-o cpu|mem]
 sysctl -a
 kextstat
 launchctl list
+launchctl print com.apple.launchd
+launchctl start com.example.darwin-observer
+launchctl stop com.example.darwin-observer
 service status com.apple.launchd
 spawn worker
+kill 104
 mach ports
 mach send 100 hello
 iokit tree
 dmesg
-ls / hostname pwd whoami
+log show
 ```
 
-Shellは仮想process table、Mach port風IPC、IOKitデバイスツリー、boot/kernel logをメモリ上で管理します。`spawn`や`mach send`を実行すると状態とログが変化します。
+`ps`はプロセス一覧、`top`はCPU/メモリ列を含む上位表示として出力形式を分けています。`launchctl list`はPID、状態、labelを表示し、`print`はprogram、runs、keepaliveまで表示します。
 
-## Cross-platform adapters
+## 状態とログ
 
-`src/darwin_adapter.c`にホスト依存処理を集約しています。POSIX、Windows、Android、macOS、BSD、Haiku、illumos/Solaris、QNXを判定し、未知の環境やWASI・組み込みではgeneric C11 adapterへフォールバックします。
+シェル内の仮想process table、launchdサービス、Mach port、IOKitツリーは同じ共通コア状態を参照します。`boot`、`spawn`、`kill`、`mach send`、`launchctl start/stop`、`shutdown`がkernel logを追加するため、`dmesg`または`log show`でイベントを追跡できます。
 
-## launchd風設定
+## Adapter設計
 
-`config/com.example.darwin-observer.plist`にplist風のサービス定義を収録しています。現在は表示・設計用で、実ホストのlaunchdへ登録するものではありません。
+- `darwin_observer.c`: Darwin構造を模倣した共通コア
+- `darwin_adapter.c`: hostname、cwd、directory listingだけをOS APIへ接続
+- full mode: POSIX/Win32 APIを使用
+- minimal mode: `DARWIN_PORTABLE_NO_HOST_APIS=ON`で標準Cとstdout/stderrだけ
 
-## 注意
-
-このプロジェクトはOSの観察教材・シミュレータです。ホストOSのカーネルを置き換えず、特権APIや実際のプロセスを制御しません。
+対応しやすい環境はLinux、macOS、BSD、Android、Windowsに加えて、Haiku、illumos/Solaris、QNX、Cygwin/MSYS2/WSL、WASI、組み込みC11環境です。
