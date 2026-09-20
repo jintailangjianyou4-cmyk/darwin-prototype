@@ -1,70 +1,52 @@
-# Cross-platform build
+# Portability matrix
 
-The prototype now has a portable CMake target in addition to the original Linux `make` workflow. It builds the same Darwin observer on:
+The project now separates the **Darwin model** from optional host integration. This makes it possible to build the observer on environments beyond Linux, macOS, BSD, Android, and Windows.
 
-- Linux
-- macOS
-- BSD family systems with a C11 compiler
-- Android through the Android NDK / Termux compiler
-- Windows through MSVC, clang-cl, or MinGW
+## Supported host classes
 
-This is **not** a native Darwin kernel and does not replace the host OS. Every target runs the same user-space simulation. The platform adapter only changes safe host operations such as hostname lookup and directory enumeration.
+| Host class | Mode | Host filesystem/hostname |
+|---|---|---|
+| POSIX systems | default | enabled |
+| Win32 | default | enabled |
+| Haiku, illumos, Solaris, QNX | default when C11/POSIX libc is available | usually enabled |
+| Cygwin, MSYS2, WSL, containers, CI sandboxes | default | enabled through their exposed libc |
+| WASI/WebAssembly | `DARWIN_PORTABLE_NO_HOST_APIS=ON` | disabled/fallback |
+| freestanding or embedded C11 environments | `DARWIN_PORTABLE_NO_HOST_APIS=ON` | disabled/fallback |
+| custom RTOS/libc ports | generic mode plus a platform adapter | port-defined |
 
-## CMake build (recommended)
+The fallback mode only requires a C11 compiler, the standard C library, and stdout/stderr. It does not include `dirent.h`, `unistd.h`, or Win32 headers, so it is suitable for restricted SDKs, WebAssembly, firmware-like test harnesses, and unusual operating systems.
 
-```sh
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-Run it with:
+## Generic/no-host-API build
 
 ```sh
-./build/darwinctl boot       # Windows: build\\darwinctl.exe boot
-auto
-./build/darwinctl uname
-./build/darwinctl sw_vers
-./build/darwinctl sysctl
-./build/darwinctl launchctl
-./build/darwinctl hostname
-./build/darwinctl ls .
-./build/darwinctl shutdown
+cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
+cmake --build build-generic
+./build-generic/darwinctl boot
+./build-generic/darwinctl uname
+./build-generic/darwinctl ls .
 ```
 
-The `darwinctl` command returns `Darwin 27.0.0` consistently on every supported host.
+In this mode `hostname` returns `darwin-prototype` and `ls` reports that the host filesystem is unavailable instead of depending on a platform API.
 
-## Platform notes
+## WebAssembly/WASI example
 
-### Linux, macOS, and BSD
-
-Install a C11 compiler and CMake, then use the commands above. POSIX `dirent` is used for the portable `ls` behavior.
-
-### Android
-
-With the Android NDK:
+With a WASI SDK installed:
 
 ```sh
-cmake -S . -B build-android \
-  -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake" \
-  -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24
-cmake --build build-android
+cmake -S . -B build-wasi \
+  -DCMAKE_C_COMPILER=clang \
+  -DCMAKE_C_FLAGS="--target=wasm32-wasi" \
+  -DDARWIN_PORTABLE_NO_HOST_APIS=ON
+cmake --build build-wasi
 ```
 
-On Termux, `clang` and `cmake` are sufficient for a native build.
+The exact linker/runtime flags depend on the WASI SDK and runtime (`wasmtime`, `wasmer`, or another host), so the repository intentionally does not assume one specific SDK.
 
-### Windows
+## Adding a new environment
 
-With Visual Studio Developer PowerShell:
+1. Compile in generic mode first.
+2. If the environment provides POSIX directory and hostname APIs, use the default mode.
+3. Otherwise define `DARWIN_PORTABLE_NO_HOST_APIS` and provide a small adapter in `src/portable_runtime.c` for any native services you want.
+4. Keep native calls inside the adapter; the command and simulated kernel layers remain unchanged.
 
-```powershell
-cmake -S . -B build -G "Visual Studio 17 2022"
-cmake --build build --config Release
-ctest --test-dir build -C Release --output-on-failure
-```
-
-The Windows adapter uses Win32 directory and hostname APIs only in the portability layer; the architecture and command behavior remain Darwin-inspired.
-
-## Compatibility boundary
-
-The project supports **building and observing the simulation** on these hosts. It does not claim binary compatibility with XNU, Linux, Android, Windows NT, or BSD kernels, and it does not attempt to expose privileged kernel APIs. The original Linux `make` targets remain available where their POSIX dependencies are present; `darwinctl` is the portable entry point.
+This expands **build and observation portability**. It does not provide native kernel integration or claim that every target can boot real Darwin/XNU.

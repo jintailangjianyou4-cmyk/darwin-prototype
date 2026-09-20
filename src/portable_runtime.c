@@ -4,24 +4,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(_WIN32)
+#if !defined(DARWIN_PORTABLE_NO_HOST_APIS) && defined(_WIN32)
 #include <windows.h>
-#else
+#elif !defined(DARWIN_PORTABLE_NO_HOST_APIS)
 #include <dirent.h>
 #include <unistd.h>
 #endif
 
 static const char *services[] = {
-    "com.apple.kernel",
-    "com.apple.launchd",
-    "com.apple.bsd",
-    "com.apple.io",
-    "com.apple.apfs"
+    "com.apple.kernel", "com.apple.launchd", "com.apple.bsd",
+    "com.apple.io", "com.apple.apfs"
 };
 static bool service_running[] = { true, true, true, false, false };
 
 const char *darwin_portable_state_path(void) {
-#if defined(_WIN32)
+#if defined(DARWIN_PORTABLE_NO_HOST_APIS)
+    return ".";
+#elif defined(_WIN32)
     const char *appdata = getenv("APPDATA");
     return appdata ? appdata : ".";
 #else
@@ -32,7 +31,9 @@ const char *darwin_portable_state_path(void) {
 
 const char *darwin_portable_hostname(void) {
     static char name[256];
-#if defined(_WIN32)
+#if defined(DARWIN_PORTABLE_NO_HOST_APIS)
+    snprintf(name, sizeof(name), "darwin-prototype");
+#elif defined(_WIN32)
     DWORD size = (DWORD)sizeof(name);
     if (!GetComputerNameA(name, &size)) snprintf(name, sizeof(name), "darwin-prototype");
 #else
@@ -43,34 +44,39 @@ const char *darwin_portable_hostname(void) {
 }
 
 void darwin_portable_boot(void) {
-    printf("Darwin prototype booting\n");
-    printf("host platform abstraction: portable C runtime\n");
-    printf("Mach subsystem initialized\n");
-    printf("BSD process layer ready\n");
-    printf("IOKit-inspired registry online\n");
-    printf("launchd service manager activated\n");
+    puts("Darwin prototype booting");
+    puts("host-independent C runtime adapter active");
+    puts("Mach subsystem initialized");
+    puts("BSD process layer ready");
+    puts("IOKit-inspired registry online");
+    puts("launchd service manager activated");
     printf("Darwin %s ready\n", DARWIN_PORTABLE_VERSION);
 }
 
 void darwin_portable_shutdown(void) {
-    for (size_t i = 0; i < sizeof(service_running) / sizeof(service_running[0]); ++i) service_running[i] = false;
-    printf("System shutdown initiated\nKernel state: shutdown\n");
+    for (size_t i = 0; i < sizeof(service_running) / sizeof(service_running[0]); ++i)
+        service_running[i] = false;
+    puts("System shutdown initiated\nKernel state: shutdown");
 }
 
 void darwin_portable_print_services(void) {
-    printf("PID  Status  Label\n");
+    puts("PID  Status  Label");
     for (size_t i = 0; i < sizeof(services) / sizeof(services[0]); ++i)
         printf("%zu    %s  %s\n", i, service_running[i] ? "running" : "stopped", services[i]);
 }
 
 void darwin_portable_print_help(void) {
-    printf("Darwin 27.0.0 portable observer\n");
-    printf("commands: boot uname sw_vers sysctl launchctl hostname pwd whoami ls help shutdown\n");
-    printf("targets: Linux macOS BSD Android Windows (user-space simulation)\n");
+    puts("Darwin 27.0.0 portable observer");
+    puts("commands: boot uname sw_vers sysctl launchctl hostname pwd whoami ls help shutdown");
+    puts("host classes: POSIX, Win32, Android, WASI, embedded, and generic C environments");
+    puts("note: this is a user-space simulation, not a native kernel");
 }
 
 void darwin_portable_list(const char *path) {
-#if defined(_WIN32)
+#if defined(DARWIN_PORTABLE_NO_HOST_APIS)
+    (void)path;
+    puts(".\n..\n[host filesystem unavailable in no-host-apis mode]");
+#elif defined(_WIN32)
     char pattern[512];
     snprintf(pattern, sizeof(pattern), "%s\\*", path);
     WIN32_FIND_DATAA data;
