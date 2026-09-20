@@ -1,6 +1,6 @@
 # Darwin Prototype
 
-Darwin 27.0.0風のOS観測・対話プロトタイプです。実際のXNUカーネルではなく、ユーザー空間でMach/BSD/IOKit/launchdを模倣します。
+Darwin 27.0.0-inspired OS observation and interactive shell prototype. It is not the XNU kernel; it is a user-space simulation of selected Mach, BSD, IOKit, and launchd concepts.
 
 ## Build
 
@@ -10,22 +10,22 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-汎用minimal mode（標準C + stdout/stderrのみ）:
+For the generic minimal mode, which uses only standard C and stdout/stderr:
 
 ```sh
 cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
 cmake --build build-generic
 ```
 
-通常のfull modeでは、`src/darwin_adapter.c`だけがPOSIX/Win32 APIを使用し、共通コアはホスト非依存です。
+In full mode, only `src/darwin_adapter.c` uses POSIX or Win32 host APIs. The simulated Darwin core remains host-independent.
 
-## darwin-shell
+## Interactive shell
 
 ```sh
 ./build/darwin-shell
 ```
 
-Darwin系の入力に寄せたコマンド:
+The shell accepts Darwin/macOS-inspired commands:
 
 ```text
 boot | reboot | shutdown
@@ -43,21 +43,33 @@ kill 104
 mach ports
 mach send 100 hello
 iokit tree
+ioreg
 dmesg
-log show
+log show --last boot
+ls / hostname pwd whoami
 ```
 
-`ps`はプロセス一覧、`top`はCPU/メモリ列を含む上位表示として出力形式を分けています。`launchctl list`はPID、状態、labelを表示し、`print`はprogram、runs、keepaliveまで表示します。
+`ps` shows the complete virtual process table in a compact BSD-like format. `top` shows a sorted, abbreviated live-style view with CPU, memory, state, and command columns. `launchctl list` reports PID, state, and service label; `launchctl print` reports program, run count, and keep-alive policy.
 
-## 状態とログ
+## Event-driven kernel-style logs
 
-シェル内の仮想process table、launchdサービス、Mach port、IOKitツリーは同じ共通コア状態を参照します。`boot`、`spawn`、`kill`、`mach send`、`launchctl start/stop`、`shutdown`がkernel logを追加するため、`dmesg`または`log show`でイベントを追跡できます。
+The common observer core owns the virtual process table, launchd service table, Mach ports, IOKit registry, and kernel log. These operations append log records:
 
-## Adapter設計
+- `boot` and `reboot`: kernel, Mach, BSD, IOKit, and launchd bootstrap events
+- `spawn` and `kill`: BSD process lifecycle events
+- `mach send`: Mach message events
+- `launchctl start/stop`: launchd service lifecycle events
+- `shutdown`: service draining and kernel halt events
 
-- `darwin_observer.c`: Darwin構造を模倣した共通コア
-- `darwin_adapter.c`: hostname、cwd、directory listingだけをOS APIへ接続
-- full mode: POSIX/Win32 APIを使用
-- minimal mode: `DARWIN_PORTABLE_NO_HOST_APIS=ON`で標準Cとstdout/stderrだけ
+Use `dmesg` or `log show` to inspect the resulting event chain.
 
-対応しやすい環境はLinux、macOS、BSD、Android、Windowsに加えて、Haiku、illumos/Solaris、QNX、Cygwin/MSYS2/WSL、WASI、組み込みC11環境です。
+## Architecture
+
+- `src/darwin_observer.c`: host-independent Darwin-like kernel/process/service/IPC/device model
+- `src/darwin_shell.c`: interactive command interpreter
+- `src/darwin_adapter.c`: isolated hostname, working-directory, and directory-listing adapters
+- full mode: POSIX/Win32 APIs through the adapter layer
+- minimal mode: standard C plus stdout/stderr, with no host filesystem or hostname APIs
+- `config/com.example.darwin-observer.plist`: launchd-style service definition for observation and documentation
+
+The design is intended to build on Linux, macOS, BSD, Android, Windows, Haiku, illumos/Solaris, QNX, Cygwin/MSYS2/WSL, WASI, embedded C11 environments, and other systems with a suitable C compiler. This means portable observation of the simulation, not native kernel compatibility.
