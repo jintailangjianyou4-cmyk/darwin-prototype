@@ -1,102 +1,55 @@
-# Darwin Prototyping OS
+# Darwin Prototype
 
-This repository is a Darwin-inspired OS prototype designed to run inside a Linux devcontainer. It does not attempt to reproduce a complete Apple Darwin kernel; instead, it models a Darwin-like system architecture influenced by XNU, Mach, BSD, IOKit, and the boot/service flow of macOS.
-
-Highlights:
-- Darwin-like kernel boot sequence with Mach/BSD/IOKit references
-- Process, filesystem, and service registry layers
-- launchd-style service lifecycle
-- CLI commands that mimic common Darwin/macOS tools
-- Buildable with GCC on Linux and testable in a devcontainer
-
-## Architecture
-
-The prototype deliberately simulates the structure and behavior of Darwin without claiming to be a real kernel implementation.
-
-- Kernel layer: `darwin_kernel` bootstraps the system and initializes core services.
-- Process layer: minimal process state model for system tasks and user-space commands.
-- Filesystem layer: a lightweight VFS-like abstraction using the local Linux filesystem under a Darwin state model.
-- Service layer: launchd-like registry with services such as `com.apple.kernel`, `com.apple.launchd`, `com.apple.bsd`, and `com.apple.io`.
-- IOKit-inspired layer: service registry and device-like object names represent hardware and driver boot concepts.
+Darwin 27.0.0風のOS観測・対話プロトタイプです。実際のXNUカーネルではなく、ユーザー空間でMach/BSD/IOKit/launchdを模倣します。
 
 ## Build
 
-```bash
-make
+```sh
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-This will produce binaries in the `bin/` directory such as:
+ホストAPIを使わない汎用モード:
 
-- `bin/darwin_kernel`
-- `bin/uname`
-- `bin/sw_vers`
-- `bin/sysctl`
-- `bin/launchctl`
-- `bin/hostname`
-- `bin/pwd`
-- `bin/whoami`
-- `bin/ls`
-- `bin/help`
-- `bin/shutdown`
-
-## Run
-
-```bash
-./bin/darwin_kernel
-./bin/uname
-./bin/sw_vers
-./bin/sysctl
-./bin/launchctl list
-./bin/hostname
-./bin/pwd
-./bin/whoami
-./bin/ls
-./bin/help
-./bin/shutdown
+```sh
+cmake -S . -B build-generic -DDARWIN_PORTABLE_NO_HOST_APIS=ON
+cmake --build build-generic
 ```
 
-## Expected output
+## Interactive shell
 
-```bash
-$ ./bin/uname
-Darwin 27.0.0
+```sh
+./build/darwin-shell
 ```
 
-```bash
-$ ./bin/sw_vers
-ProductName: Darwin
-ProductVersion: 27.0.0
-BuildVersion: 27A
+主なコマンド:
+
+```text
+boot / shutdown
+ps / top
+sysctl -a
+kextstat
+launchctl list
+service status com.apple.launchd
+spawn worker
+mach ports
+mach send 100 hello
+iokit tree
+dmesg
+ls / hostname pwd whoami
 ```
 
-```bash
-$ ./bin/sysctl | head
-kern.ostype: Darwin
-kern.osrelease: 27.0.0
-kern.osrevision: 1
-hw.machine: x86_64
-```
+Shellは仮想process table、Mach port風IPC、IOKitデバイスツリー、boot/kernel logをメモリ上で管理します。`spawn`や`mach send`を実行すると状態とログが変化します。
 
-```bash
-$ ./bin/launchctl list
-PID  Status  Label
-0    running com.apple.kernel
-1    running com.apple.launchd
-2    running com.apple.bsd
-3    stopped com.apple.io
-4    stopped com.apple.apfs
-```
+## Cross-platform adapters
 
-## Testing
+`src/darwin_adapter.c`にホスト依存処理を集約しています。POSIX、Windows、Android、macOS、BSD、Haiku、illumos/Solaris、QNXを判定し、未知の環境やWASI・組み込みではgeneric C11 adapterへフォールバックします。
 
-```bash
-make test
-```
+## launchd風設定
 
-The test script validates the most important outputs for the Darwin prototype and confirms that the boot and command layer remain consistent.
+`config/com.example.darwin-observer.plist`にplist風のサービス定義を収録しています。現在は表示・設計用で、実ホストのlaunchdへ登録するものではありません。
 
-## Notes
+## 注意
 
-- This project is intentionally not a full Darwin/KEXT/XNU reproduction.
-- It follows the Darwin design philosophy and exposes a compatible CLI surface for experiments, teaching, and devcontainer-based workflows.
-- The runtime state is stored in `/tmp/darwin_runtime_state` by default and can be overridden with `DARWIN_STATE_FILE`.
+このプロジェクトはOSの観察教材・シミュレータです。ホストOSのカーネルを置き換えず、特権APIや実際のプロセスを制御しません。
