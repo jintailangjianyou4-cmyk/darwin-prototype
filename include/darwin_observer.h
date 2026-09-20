@@ -1,8 +1,6 @@
 #ifndef DARWIN_OBSERVER_H
 #define DARWIN_OBSERVER_H
 
-#include <stddef.h>
-
 #define DARWIN_VERSION "27.0.0"
 #define DARWIN_MAX_PROCESSES 32
 #define DARWIN_MAX_PORTS 64
@@ -22,7 +20,8 @@ typedef struct {
 } darwin_port_t;
 
 typedef struct {
-    char timestamp[24], level[12], message[160];
+    unsigned long sequence;
+    char timestamp[24], level[12], subsystem[24], category[24], message[160];
 } darwin_log_t;
 
 typedef struct {
@@ -46,6 +45,7 @@ typedef struct {
     int device_count;
     darwin_service_t services[DARWIN_MAX_SERVICES];
     int service_count;
+    unsigned long next_log_sequence;
     int booted, shutdown_requested;
 } darwin_observer_t;
 
@@ -53,10 +53,11 @@ void darwin_observer_init(darwin_observer_t *o);
 void darwin_observer_boot(darwin_observer_t *o);
 void darwin_observer_shutdown(darwin_observer_t *o);
 void darwin_observer_log(darwin_observer_t *o, const char *level, const char *message);
+void darwin_observer_log_event(darwin_observer_t *o, const char *level, const char *subsystem, const char *category, const char *message);
 void darwin_print_processes(const darwin_observer_t *o, int top_mode, const char *sort_key);
 void darwin_print_ports(const darwin_observer_t *o);
 void darwin_print_devices(const darwin_observer_t *o);
-void darwin_print_logs(const darwin_observer_t *o);
+void darwin_print_logs(const darwin_observer_t *o, const char *subsystem_filter);
 int darwin_spawn(darwin_observer_t *o, const char *name);
 int darwin_kill(darwin_observer_t *o, int pid);
 int darwin_send_message(darwin_observer_t *o, int port, const char *message);
