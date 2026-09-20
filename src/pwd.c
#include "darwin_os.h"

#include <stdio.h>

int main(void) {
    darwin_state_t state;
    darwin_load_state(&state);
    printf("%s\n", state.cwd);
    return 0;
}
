@@ -1,0 +1,10 @@
+#include "darwin_os.h"
+
+#include <stdio.h>
+
+int main(void) {
+    darwin_state_t state;
+    darwin_load_state(&state);
+    printf("%s\n", state.hostname);
+    return 0;
+}

@@ -1,0 +1,195 @@
+#include "darwin_os.h"
+
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void trim_newline(char *text) {
+    size_t len = strlen(text);
+    while (len > 0 && (text[len - 1] == '\n' || text[len - 1] == '\r')) {
+        text[--len] = '\0';
+    }
+}
+
+const char *darwin_state_path(void) {
+    const char *env_path = getenv(DARWIN_STATE_ENV);
+    if (env_path != NULL && env_path[0] != '\0') {
+        return env_path;
+    }
+    return DARWIN_STATE_PATH;
+}
+
+void darwin_set_default_state(darwin_state_t *state) {
+    memset(state, 0, sizeof(*state));
+    snprintf(state->hostname, sizeof(state->hostname), "%s", DARWIN_HOSTNAME);
+    snprintf(state->username, sizeof(state->username), "%s", DARWIN_USERNAME);
+    snprintf(state->cwd, sizeof(state->cwd), "%s", DARWIN_DEFAULT_CWD);
+    snprintf(state->kernel_state, sizeof(state->kernel_state), "booting");
+    state->booted = true;
+    state->shutdown_requested = false;
+    darwin_register_default_services(state);
+}
+
+void darwin_register_default_services(darwin_state_t *state) {
+    const char *names[] = {
+        "com.apple.kernel",
+        "com.apple.launchd",
+        "com.apple.bsd",
+        "com.apple.io",
+        "com.apple.apfs"
+    };
+
+    const char *descriptions[] = {
+        "Darwin kernel core",
+        "System boot manager",
+        "BSD process and socket subsystem",
+        "I/O Kit registry",
+        "Apple filesystem abstraction"
+    };
+
+    state->service_count = 0;
+    for (size_t i = 0; i < 5; ++i) {
+        snprintf(state->services[i].name, sizeof(state->services[i].name), "%s", names[i]);
+        snprintf(state->services[i].description, sizeof(state->services[i].description), "%s", descriptions[i]);
+        state->services[i].running = (i == 0 || i == 1 || i == 2);
+        state->service_count += 1;
+    }
+}
+
+int darwin_save_state(const darwin_state_t *state) {
+    const char *path = darwin_state_path();
+    FILE *fp = fopen(path, "w");
+    if (fp == NULL) {
+        fprintf(stderr, "unable to write Darwin runtime state to %s: %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    fprintf(fp, "hostname=%s\n", state->hostname);
+    fprintf(fp, "username=%s\n", state->username);
+    fprintf(fp, "cwd=%s\n", state->cwd);
+    fprintf(fp, "kernel_state=%s\n", state->kernel_state);
+    fprintf(fp, "booted=%d\n", state->booted ? 1 : 0);
+    fprintf(fp, "shutdown_requested=%d\n", state->shutdown_requested ? 1 : 0);
+    fprintf(fp, "service_count=%d\n", state->service_count);
+
+    for (int i = 0; i < state->service_count; ++i) {
+        fprintf(fp, "service.%d.name=%s\n", i, state->services[i].name);
+        fprintf(fp, "service.%d.description=%s\n", i, state->services[i].description);
+        fprintf(fp, "service.%d.running=%d\n", i, state->services[i].running ? 1 : 0);
+    }
+
+    fclose(fp);
+    return 0;
+}
+
+int darwin_load_state(darwin_state_t *state) {
+    const char *path = darwin_state_path();
+    FILE *fp = fopen(path, "r");
+
+    darwin_set_default_state(state);
+
+    if (fp == NULL) {
+        return darwin_save_state(state);
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        trim_newline(line);
+        if (line[0] == '\0') {
+            continue;
+        }
+
+        if (strncmp(line, "hostname=", 9) == 0) {
+            snprintf(state->hostname, sizeof(state->hostname), "%s", line + 9);
+        } else if (strncmp(line, "username=", 9) == 0) {
+            snprintf(state->username, sizeof(state->username), "%s", line + 9);
+        } else if (strncmp(line, "cwd=", 4) == 0) {
+            snprintf(state->cwd, sizeof(state->cwd), "%s", line + 4);
+        } else if (strncmp(line, "kernel_state=", 13) == 0) {
+            snprintf(state->kernel_state, sizeof(state->kernel_state), "%s", line + 13);
+        } else if (strncmp(line, "booted=", 7) == 0) {
+            state->booted = (atoi(line + 7) != 0);
+        } else if (strncmp(line, "shutdown_requested=", 19) == 0) {
+            state->shutdown_requested = (atoi(line + 19) != 0);
+        } else if (strncmp(line, "service_count=", 14) == 0) {
+            state->service_count = atoi(line + 14);
+        } else if (strncmp(line, "service.", 8) == 0) {
+            int index = 0;
+            char key[64] = {0};
+            char value[256] = {0};
+
+            if (sscanf(line, "service.%d.%63[^=]=%255[^
+]", &index, key, value) == 3) {
+                if (index < 0 || index >= DARWIN_MAX_SERVICES) {
+                    continue;
+                }
+
+                if (strcmp(key, "name") == 0) {
+                    snprintf(state->services[index].name, sizeof(state->services[index].name), "%s", value);
+                } else if (strcmp(key, "description") == 0) {
+                    snprintf(state->services[index].description, sizeof(state->services[index].description), "%s", value);
+                } else if (strcmp(key, "running") == 0) {
+                    state->services[index].running = (atoi(value) != 0);
+                }
+            }
+        }
+    }
+
+    fclose(fp);
+    if (state->service_count == 0) {
+        darwin_register_default_services(state);
+    }
+    return 0;
+}
+
+int darwin_boot_system(void) {
+    darwin_state_t state;
+    darwin_load_state(&state);
+
+    state.booted = true;
+    state.shutdown_requested = false;
+    snprintf(state.kernel_state, sizeof(state.kernel_state), "running");
+    darwin_register_default_services(&state);
+
+    return darwin_save_state(&state);
+}
+
+int darwin_shutdown_system(void) {
+    darwin_state_t state;
+    darwin_load_state(&state);
+
+    state.booted = false;
+    state.shutdown_requested = true;
+    snprintf(state.kernel_state, sizeof(state.kernel_state), "shutdown");
+
+    for (int i = 0; i < state.service_count; ++i) {
+        state.services[i].running = false;
+    }
+
+    return darwin_save_state(&state);
+}
+
+int darwin_update_service_status(const char *name, bool running) {
+    darwin_state_t state;
+    darwin_load_state(&state);
+
+    for (int i = 0; i < state.service_count; ++i) {
+        if (strcmp(state.services[i].name, name) == 0) {
+            state.services[i].running = running;
+            return darwin_save_state(&state);
+        }
+    }
+
+    return -1;
+}
+
+const char *darwin_get_service_status_string(bool running) {
+    return running ? "running" : "stopped";
+}
+
+void darwin_print_banner(void) {
+    printf("Darwin prototype booting\n");
+    printf("XNU-inspired bootstrap with Mach/BSD/IOKit emulation\n");
+    printf("OS: Darwin %s\n", DARWIN_OS_RELEASE);
+}

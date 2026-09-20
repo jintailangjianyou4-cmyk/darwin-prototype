@@ -1,0 +1,16 @@
+#include "darwin_os.h"
+
+#include <stdio.h>
+
+int main(int argc, char **argv) {
+    darwin_state_t state;
+    darwin_load_state(&state);
+
+    if (argc > 1 && argv[1][0] == '-' && argv[1][1] == 'a') {
+        printf("Darwin %s on %s\n", DARWIN_OS_RELEASE, state.hostname);
+        return 0;
+    }
+
+    printf("Darwin %s\n", DARWIN_OS_RELEASE);
+    return 0;
+}

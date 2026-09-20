@@ -1,0 +1,13 @@
+{
+  "name": "darwin-prototype",
+  "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-22.04",
+  "postCreateCommand": "make -C ${containerWorkspaceFolder} all",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cpptools"
+      ]
+    }
+  }
+}

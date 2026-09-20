@@ -1,0 +1,38 @@
+#include "darwin_os.h"
+
+#include <stdio.h>
+#include <string.h>
+
+static void print_key_value(const char *key, const char *value) {
+    printf("%s: %s\n", key, value);
+}
+
+int main(int argc, char **argv) {
+    if (argc == 1) {
+        print_key_value("kern.ostype", DARWIN_OS_NAME);
+        print_key_value("kern.osrelease", DARWIN_OS_RELEASE);
+        print_key_value("kern.osrevision", "1");
+        print_key_value("kern.osversion", "Darwin Kernel Version 27.0.0");
+        print_key_value("hw.machine", "x86_64");
+        print_key_value("hw.model", "DarwinPrototype");
+        return 0;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "kern.ostype") == 0) {
+            print_key_value("kern.ostype", DARWIN_OS_NAME);
+        } else if (strcmp(argv[i], "kern.osrelease") == 0) {
+            print_key_value("kern.osrelease", DARWIN_OS_RELEASE);
+        } else if (strcmp(argv[i], "kern.osrevision") == 0) {
+            print_key_value("kern.osrevision", "1");
+        } else if (strcmp(argv[i], "hw.machine") == 0) {
+            print_key_value("hw.machine", "x86_64");
+        } else if (strcmp(argv[i], "hw.model") == 0) {
+            print_key_value("hw.model", "DarwinPrototype");
+        } else {
+            fprintf(stderr, "sysctl: unknown key: %s\n", argv[i]);
+        }
+    }
+
+    return 0;
+}

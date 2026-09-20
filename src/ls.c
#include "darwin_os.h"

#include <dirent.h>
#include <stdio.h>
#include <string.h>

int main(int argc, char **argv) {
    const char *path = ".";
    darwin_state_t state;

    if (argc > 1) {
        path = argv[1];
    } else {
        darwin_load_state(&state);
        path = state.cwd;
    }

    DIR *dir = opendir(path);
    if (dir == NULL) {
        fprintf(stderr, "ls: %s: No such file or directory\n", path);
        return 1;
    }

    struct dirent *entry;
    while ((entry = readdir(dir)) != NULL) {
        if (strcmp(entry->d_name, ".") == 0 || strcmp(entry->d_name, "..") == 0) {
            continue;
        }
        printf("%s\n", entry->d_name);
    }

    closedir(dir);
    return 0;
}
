@@ -1,0 +1,8 @@
+#include "darwin_os.h"
+
+#include <stdio.h>
+
+int main(void) {
+    printf("root\n");
+    return 0;
+}
